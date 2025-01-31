@@ -946,11 +946,107 @@ class KiriMoto(BaseSlicer):
             r"; firstLayerBedTemp = (\d+\.?\d*)", self.header_data
         )
 
+class Creality(BaseSlicer):
+    def check_identity(self, data: str) -> Optional[Dict[str, str]]:
+        aliases = {
+            'Creative3D': r"Creative3D",
+            'Creality': r"Creality"
+        }
+        pattern = r'Version : V([\d\.]+)'
+        match_version = re.search(pattern, data)
+        slicer_version = match_version.group(1) if match_version else "1.0"
+        for name, expr in aliases.items():
+            match = re.search(expr, data)
+            # ;Creality Print Version : V4.3.7.6456
+            if match:
+                return {
+                    'slicer': name,
+                    'slicer_version': slicer_version
+                }
+        return None
+
+    def parse_first_layer_height(self) -> Optional[float]:
+        return _regex_find_first(
+            r";\sinitial_layer_print_height\s=\s(\d+\.?\d*)", self.footer_data)
+
+
+    def parse_layer_height(self) -> Optional[float]:
+        pattern = r";\slayer_height\s=\s(\d+\.?\d*)"
+        self.layer_height = _regex_find_first(
+            pattern, self.footer_data)
+        return self.layer_height
+
+    def parse_object_height(self) -> Optional[float]:
+        matches = re.findall(
+             r"; MAXZ = (\d+\.?\d*)", self.header_data)
+        if matches:
+            try:
+                matches = [float(m) for m in matches]
+            except Exception:
+                pass
+            else:
+                return max(matches)
+        return self._parse_max_float(r"G1\sZ\d+\.\d*\sF", self.header_data)
+
+    def parse_layer_count(self) -> Optional[int]:
+        return _regex_find_int(
+            r";\stotal\slayers\scount\s=\s(\d+)", self.footer_data)
+
+    def parse_filament_type(self) -> Optional[str]:
+        return _regex_find_string(
+            r";\sfilament_type\s=\s(.+)", self.footer_data)
+
+    def parse_filament_name(self) -> Optional[str]:
+        return _regex_find_string(
+            r";\sfilament_settings_id\s=\s(.+)", self.footer_data)
+
+    def parse_filament_total(self) -> Optional[float]:
+        return _regex_find_first(
+            r";\sfilament\sused\s\[mm\]\s=\s(\d+\.\d*)", self.footer_data)
+
+    def parse_filament_weight_total(self) -> Optional[float]:
+        return _regex_find_first(
+            r";\sfilament\sused\s\[g\]\s=\s(\d+\.\d*)", self.footer_data)
+
+    def parse_estimated_time(self) -> Optional[float]:
+        time_match = re.search(
+            r';\sestimated\sprinting\stime.*', self.footer_data)
+        if not time_match:
+            return None
+        total_time = 0
+        time_group = time_match.group()
+        time_patterns = [(r"(\d+)d", 24*60*60), (r"(\d+)h", 60*60),
+                         (r"(\d+)m", 60), (r"(\d+)s", 1)]
+        try:
+            for pattern, multiplier in time_patterns:
+                t = re.search(pattern, time_group)
+                if t:
+                    total_time += int(t.group(1)) * multiplier
+        except Exception:
+            return None
+        return round(total_time, 2)
+
+    def parse_nozzle_diameter(self) -> Optional[float]:
+        return _regex_find_first(
+            r";\snozzle_diameter\s=\s(\d+\.\d*)", self.footer_data)
+
+    def parse_first_layer_extr_temp(self) -> Optional[float]:
+        return _regex_find_first(
+            r";\snozzle_temperature_initial_layer\s=\s(\d+\.?\d*)", self.footer_data)
+
+    def parse_first_layer_bed_temp(self) -> Optional[float]:
+        return _regex_find_first(
+            r";\sfirst_layer_bed_temperature\s=\s(\d+\.?\d*)", self.footer_data)
+
+    def parse_chamber_temp(self) -> Optional[float]:
+        return _regex_find_first(
+            r";\schamber_temperature\s=\s(\d+\.?\d*)", self.footer_data)
+
 
 READ_SIZE = 512 * 1024
 SUPPORTED_SLICERS: List[Type[BaseSlicer]] = [
     PrusaSlicer, Slic3rPE, Slic3r, Cura, Simplify3D,
-    KISSlicer, IdeaMaker, IceSL, KiriMoto
+    KISSlicer, IdeaMaker, IceSL, KiriMoto, Creality
 ]
 SUPPORTED_DATA = [
     'gcode_start_byte',
